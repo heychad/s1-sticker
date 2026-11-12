@@ -17,6 +17,11 @@ enum MacRFCOMM {
         }
     }
     static func run(raster:Data?=nil,feedRows:Int=PrintFormat.feedRows,keepAliveDuration:Double?=nil,keepAliveInterval:Double=60)->[String:Any] {
+        // IOBluetooth's synchronous calls can stall indefinitely. Only the
+        // status-only helper may be terminated by this watchdog: a print job
+        // must never be killed or retried after a possibly partial transfer.
+        if keepAliveDuration != nil {signal(SIGALRM,SIG_DFL);alarm(10)}
+        defer{if keepAliveDuration != nil {alarm(0)}}
         // Foreground requests hold this lease until their transaction completes.
         // The keep-awake session watches it and yields its channel promptly.
         let intent=open(S1Files.directory.appendingPathComponent("printer-intent.lock").path,O_CREAT|O_RDWR,0o600)
@@ -28,6 +33,10 @@ enum MacRFCOMM {
                 if ProcessInfo.processInfo.systemUptime>=deadline{return failure("The S1 is handling another request. Try again in a moment.")}
                 spin(0.1)
             }
+        } else {
+            // Give a queued foreground request priority before opening a link.
+            guard flock(intent,LOCK_EX|LOCK_NB)==0 else{return ["ok":true,"sent":false,"handoff":true,"checks":0]}
+            flock(intent,LOCK_UN)
         }
         defer{if keepAliveDuration == nil {flock(intent,LOCK_UN)}}
         let path=S1Files.directory.appendingPathComponent("printer.lock").path
@@ -74,23 +83,30 @@ enum MacRFCOMM {
         guard let before=readStatus() else{return failure("The S1 did not return valid status. Nothing printed.")}
         var response:[String:Any]=["ok":true,"flags":before.flags,"idle":before.idle ? 1:0,"battery":before.battery,"printer":device.name ?? "S1","errors":PrinterProtocol.errors(before.flags)]
         if let duration=keepAliveDuration {
+            alarm(0) // Idle time is intentional; only bound Bluetooth calls.
             let deadline=ProcessInfo.processInfo.systemUptime+duration
             var checks=1
             print("Status check 1: connected; battery \(before.battery)%");fflush(stdout)
             while ProcessInfo.processInfo.systemUptime<deadline {
                 let next=min(deadline,ProcessInfo.processInfo.systemUptime+keepAliveInterval)
                 while ProcessInfo.processInfo.systemUptime<next {
-                    if flock(intent,LOCK_EX|LOCK_NB) != 0 {return ["ok":true,"sent":false,"handoff":true,"checks":checks]}
+                    if flock(intent,LOCK_EX|LOCK_NB) != 0 {
+                        alarm(10) // Also bound channel and connection teardown.
+                        return ["ok":true,"sent":false,"handoff":true,"checks":checks]
+                    }
                     flock(intent,LOCK_UN)
                     spin(min(0.2,next-ProcessInfo.processInfo.systemUptime))
                 }
                 if ProcessInfo.processInfo.systemUptime>=deadline {break}
+                alarm(10)
                 guard let status=readStatus() else {
                     var failed=failure("Keep-alive stopped: no valid status response.");failed["checks"]=checks;return failed
                 }
+                alarm(0)
                 checks+=1
                 print("Status check \(checks): connected; battery \(status.battery)%");fflush(stdout)
             }
+            alarm(10)
             return ["ok":true,"sent":false,"checks":checks,"message":"Keep-alive finished. No print job sent."]
         }
         guard let raster else{response["message"]="Connected";return response}
