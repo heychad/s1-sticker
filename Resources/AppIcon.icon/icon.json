@@ -1,0 +1,27 @@
+{
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.08627,0.29020,0.23529,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "glass-sticker.png",
+          "name" : "glass-sticker"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.3
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.45
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

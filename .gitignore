@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+.build-mac/
+.build-public/
+.build-public-ios/
+.mac-signing-identity
+S1Sticker.xcodeproj/
+__pycache__/
+*.pyc
+ios/build/
+*.log
+.env
+.env.*

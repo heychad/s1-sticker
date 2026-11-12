@@ -1,0 +1,101 @@
+name: S1Sticker
+options:
+  bundleIdPrefix: local.chad
+  deploymentTarget:
+    macOS: '13.0'
+    iOS: '17.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    CURRENT_PROJECT_VERSION: 15
+    MARKETING_VERSION: '1.4'
+    SWIFT_COMPILATION_MODE: wholemodule
+targets:
+  S1Mac:
+    type: application
+    platform: macOS
+    sources:
+      - macOS
+      - Shared
+      - path: Resources/AppIcon.icon
+        buildPhase: resources
+      - path: AGENTS.md
+        buildPhase: resources
+    info:
+      path: macOS/Info.plist
+      properties:
+        CFBundleDisplayName: S1 Sticker
+        CFBundleName: S1 Sticker
+        CFBundleShortVersionString: '$(MARKETING_VERSION)'
+        CFBundleVersion: '$(CURRENT_PROJECT_VERSION)'
+        NSBluetoothAlwaysUsageDescription: Print your chosen stickers directly to your iDPRT S1.
+        NSHighResolutionCapable: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Printable document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.image, com.adobe.pdf, public.plain-text, public.json]
+    settings:
+      base:
+        PRODUCT_NAME: S1 Sticker
+        EXECUTABLE_NAME: S1Sticker
+        PRODUCT_BUNDLE_IDENTIFIER: local.chad.S1Sticker
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: NO
+  S1Pocket:
+    type: application
+    platform: iOS
+    sources:
+      - ios/Sources
+      - Shared
+      - path: Resources/AppIcon.icon
+        buildPhase: resources
+      - path: AGENTS.md
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.chad.S1Pocket
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: S1 Sticker
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Print your chosen stickers directly to your iDPRT S1.
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_CFBundleVersion: '$(CURRENT_PROJECT_VERSION)'
+        INFOPLIST_KEY_CFBundleShortVersionString: '$(MARKETING_VERSION)'
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: '1,2'
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: S1Share
+  S1Share:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ios/Sources
+        excludes: [S1PocketApp.swift, AI]
+      - Shared/Core
+      - Shared/UI
+      - ios/Share
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.chad.S1Pocket.Share
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: SHARE_EXTENSION
+        APPLICATION_EXTENSION_API_ONLY: YES
+        TARGETED_DEVICE_FAMILY: '1,2'
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: ios/Share/Info.plist
+      properties:
+        CFBundleDisplayName: Print to S1
+        CFBundleShortVersionString: '$(MARKETING_VERSION)'
+        CFBundleVersion: '$(CURRENT_PROJECT_VERSION)'
+        NSBluetoothAlwaysUsageDescription: Print the shared image or text directly to your iDPRT S1.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+              NSExtensionActivationSupportsFileWithMaxCount: 1

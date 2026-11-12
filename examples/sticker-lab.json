@@ -1,0 +1,37 @@
+{
+  "blocks": [
+    {
+      "type": "heading",
+      "text": "STICKER LAB",
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "text": "Make something useful.\nPrint it. Stick it."
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Thing",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Text & tables",
+          "Ready"
+        ],
+        [
+          "Images",
+          "Black & white"
+        ],
+        [
+          "Bluetooth",
+          "Direct from Mac"
+        ]
+      ]
+    }
+  ]
+}
