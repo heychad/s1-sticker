@@ -6,6 +6,8 @@ import AppKit
     static func main() {
         let arguments=CommandLine.arguments
         if arguments.count>1,arguments[1].hasPrefix("--") {
+            // CLI work should not activate the app or place it in the Dock.
+            NSApplication.shared.setActivationPolicy(.prohibited)
             Task{exit(await S1CommandLine.run(arguments))}
             RunLoop.main.run()
         }else{S1DesktopApp.main()}

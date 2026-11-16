@@ -48,7 +48,7 @@ enum MacRFCOMM {
             spin(0.1)
         }
         defer{flock(lock,LOCK_UN);close(lock)}
-        guard let device=(IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice])?.first(where:{$0.name?.hasPrefix("S1-")==true}) else{return failure("Pair the S1 in System Settings → Bluetooth, then try again.")}
+        guard let device=(IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice])?.first(where:{$0.name?.hasPrefix("S1-")==true}) else{return failure("No paired S1 is available to this process. Check Bluetooth access and the paired-device list in System Settings, then try again.")}
         var channelID:BluetoothRFCOMMChannelID=0
         for service in device.services as? [IOBluetoothSDPServiceRecord] ?? [] {
             var found:BluetoothRFCOMMChannelID=0
