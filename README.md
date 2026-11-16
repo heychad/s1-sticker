@@ -40,13 +40,13 @@ AI generation is optional and uses the OpenAI API, which is billed separately fr
 ./bin/s1 --ai-image 'A sleepy cat in a teacup'
 ```
 
-`--render` saves a preview without printing. JSON layout blocks are illustrated in `examples/sticker-lab.json`. Image rotation is available with `--rotate auto`, `0`, `90`, `180`, or `270`. A partially transmitted job is not automatically retried.
+`--render` saves a preview without printing. JSON layout blocks are illustrated in `examples/sticker-lab.json`. Image rotation is available with `--rotate auto`, `0`, `90`, `180`, or `270`. A partially transmitted job is not automatically retried. If a print times out or returns no readable result, its transmission is unknown; check the physical printer before retrying.
 
 Add the scripts in `raycast/` to Raycast's Script Commands directory to print text, clipboard contents, or an AI prompt. AI commands use the Mac app's saved API key.
 
 ## Optional: keep the printer ready
 
-S1 Keep Ready is an experimental Mac login helper. It periodically checks the printer and releases its connection when a Mac print request arrives, then reconnects. Use it with the printer plugged in and the Mac awake. It cannot detect charging, wake a powered-off printer, or operate while the Mac sleeps. Status handoffs have been tested; physical printing during the handoff still needs verification.
+S1 Keep Ready is an experimental Mac login helper. It periodically checks the printer and releases its connection when a Mac print request arrives, then reconnects. Its watchdog ends the status-only helper if a Bluetooth call stalls; it never terminates or retries a print job. Use it with the printer plugged in and the Mac awake. It cannot detect charging, wake a powered-off printer, or operate while the Mac sleeps. Status handoffs have been tested; physical printing during the handoff still needs verification.
 
 ```sh
 python3 scripts/keep-ready.py install
