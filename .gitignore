@@ -3,6 +3,7 @@
 .build-mac/
 .build-public/
 .build-public-ios/
+.build-vretti/
 .mac-signing-identity
 S1Sticker.xcodeproj/
 __pycache__/
