@@ -12,6 +12,7 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var readStarted: Date?
     private var readPending = false
     private var scanning = false
+    private var timer: DispatchSourceTimer?
     private let targetID: UUID
     private let deadline: Date
 
@@ -20,7 +21,11 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         self.deadline = Date().addingTimeInterval(duration)
         super.init()
         central = CBCentralManager(delegate: self, queue: .main)
-        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.tick() }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 10, repeating: 10)
+        timer.setEventHandler { [weak self] in self?.tick() }
+        timer.resume()
+        self.timer = timer
     }
 
     private func log(_ message: String) {
@@ -30,6 +35,12 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func scan() {
         guard central.state == .poweredOn, target == nil, !scanning else { return }
+        if let cached = central.retrievePeripherals(withIdentifiers: [targetID]).first {
+            target = cached; cached.delegate = self; attemptStarted = Date()
+            log("Reconnecting to known Vretti")
+            central.connect(cached)
+            return
+        }
         scanning = true
         log("Scanning for Vretti")
         central.scanForPeripherals(withServices: nil)
