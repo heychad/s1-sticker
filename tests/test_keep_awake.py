@@ -26,7 +26,12 @@ class KeepAwakeTests(unittest.TestCase):
         path = Path.home() / 'Library/Application Support/S1Sticker/keep-awake.lock'
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                # A running helper already holds the lease; exercise the same
+                # rejection without disrupting it.
+                pass
             self.assertIn('already running', self.invoke('--duration', '1')['message'])
 
 if __name__ == '__main__':

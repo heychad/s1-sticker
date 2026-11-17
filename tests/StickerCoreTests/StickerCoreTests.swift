@@ -3,6 +3,12 @@ import CoreGraphics
 @testable import StickerCore
 
 final class StickerCoreTests:XCTestCase {
+    func testVrettiMarkupKeepsHeadingsChecksAndTableCells() throws {
+        let parsed = try LabelMarkup.parse("# Header\n- [ ] Task\n| Item | Status |\n| --- | --- |\n| Printer | Ready |")
+        XCTAssertEqual(parsed, [.text("Header", heading: 1), .text("☐ Task", heading: 0), .table([["Item", "Status"], ["Printer", "Ready"]])])
+        XCTAssertThrowsError(try LabelMarkup.parse("| A | B | C | D |\n| --- | --- | --- | --- |"))
+        XCTAssertThrowsError(try LabelMarkup.parse("| A | B |\n| --- | --- |\n| only one |"))
+    }
     func testProtocolRoundTripAndFeed()throws {
         for rows in [1,4,31,32,33,2400] {
             let input=Data((0..<(rows*48)).map{UInt8(truncatingIfNeeded:$0*17)})

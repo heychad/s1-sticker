@@ -5,6 +5,7 @@ import Combine
     @Published private(set) var busy=false
     @Published var message="Ready for your next sticker"
     func check(){run(["--status"])}
+    func feed(){run(["--feed"])}
     func printOutput(_ output:StickerOutput) {
         guard !busy else{return}
         do {

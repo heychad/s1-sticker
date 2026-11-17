@@ -19,6 +19,11 @@ import Darwin
                 return finish(await MacRFCOMM.perform(raster:sample.output.raster,feedRows:sample.feedRows))
             }
             if mode=="--status"{return finish(await MacRFCOMM.perform())}
+            if mode=="--feed" {
+                var result=await MacRFCOMM.perform(raster:Data(repeating:0,count:48))
+                if result["ok"] as? Bool == true {result["message"]="Feed sent · check the paper"}
+                return finish(result)
+            }
             if mode=="--keep-awake" {
                 let durationText=value("--duration") ?? "3600"
                 let intervalText=value("--interval") ?? "60"
@@ -64,6 +69,43 @@ import Darwin
                 guard args.count>2 else{throw StickerRenderer.issue("Specify a raster file.")}
                 return finish(await MacRFCOMM.perform(raster:try Data(contentsOf:URL(fileURLWithPath:args[2]))))
             }
+            if mode=="--vretti-ai-image" || mode=="--vretti-ai-text" {
+                guard args.count>2,!args[2].isEmpty,args[2].count<=4000 else{throw StickerRenderer.issue("Describe the label in 1–4,000 characters.")}
+                let preview=args.contains("--preview-only")
+                guard !preview || value("--output") != nil else{throw StickerRenderer.issue("Preview requires --output PNG.")}
+                let lease=try FileLease("ai-job.lock")
+                defer{withExtendedLifetime(lease){}}
+                let vrettiExecutable=FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Vretti Print.app/Contents/MacOS/VrettiPrint")
+                guard FileManager.default.isExecutableFile(atPath:vrettiExecutable.path) else{throw StickerRenderer.issue("Install Vretti Print before generating a label.")}
+                let client=OpenAIStickerClient()
+                guard client.configured else{throw StickerRenderer.issue("Add your API key in S1 Sticker → AI settings first.")}
+                if args.contains("--compact"){print(preview ? "Making your label…":"Making and printing your label…");fflush(stdout)}
+                let generated=try await client.generate(args[2],kind:mode=="--vretti-ai-image" ? .artwork:.text,vretti:true)
+                let dir=FileManager.default.temporaryDirectory.appendingPathComponent("vretti-ai-"+UUID().uuidString)
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true)
+                defer{try? FileManager.default.removeItem(at:dir)}
+                let input:URL
+                switch generated {
+                case .image(let image):
+                    input=dir.appendingPathComponent("artwork.png")
+                    guard let data=StickerImage.pngData(image) else{throw StickerRenderer.issue("Could not prepare the artwork.")}
+                    try data.write(to:input,options:.atomic)
+                case .text(let text):
+                    input=dir.appendingPathComponent("label.txt");try text.write(to:input,atomically:true,encoding:.utf8)
+                }
+                let process=Process(),pipe=Pipe()
+                process.executableURL=vrettiExecutable
+                var options=[preview ? "--render":"--print",input.path]
+                if mode=="--vretti-ai-image" && !args.contains("--sharp"){options.append("--dither")}
+                if let output=value("--output"){options += ["--output",output]}
+                process.arguments=options;process.standardOutput=pipe;process.standardError=Pipe()
+                try process.run();let data=pipe.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit()
+                guard let result=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] else {
+                    let sent:Any = preview ? false as Any : NSNull()
+                    return finish(["ok":false,"sent":sent,"message":preview ? "Preview result unavailable; nothing printed." : "Print result unavailable. Check the label before retrying."])
+                }
+                return finish(result)
+            }
             var content:StickerContent
             var dither=args.contains("--dither")
             var lease:FileLease?
@@ -84,8 +126,8 @@ import Darwin
             }else if mode=="--clipboard"{content=try S1Files.clipboard()}
             else if mode=="--text",args.count>2{content=StickerContent(text:args[2])}
             else if ["--print","--render"].contains(mode),args.count>2{content=try StickerRenderer.load(URL(fileURLWithPath:args[2]))}
-            else{throw StickerRenderer.issue("Use --ai-image PROMPT, --ai-text PROMPT, --print FILE, --text TEXT, --clipboard, --status, --keep-awake [--duration SECONDS] [--interval SECONDS], or --render FILE --output PNG.")}
-            let output=try StickerRenderer.render(content,dither:dither,autoRotate:automatic,turns:turns)
+            else{throw StickerRenderer.issue("Use --ai-image PROMPT, --ai-text PROMPT, --print FILE, --text TEXT, --clipboard, --status, --feed, --keep-awake [--duration SECONDS] [--interval SECONDS], or --render FILE --output PNG.")}
+            let output=try StickerRenderer.render(content,dither:dither,autoRotate:automatic,turns:turns,allowWide:args.contains("--allow-wide"))
             if let path=value("--output") {
                 guard let png=StickerImage.pngData(output.image) else{throw StickerRenderer.issue("Could not save the preview.")}
                 try png.write(to:URL(fileURLWithPath:path),options:.atomic)

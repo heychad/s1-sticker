@@ -82,12 +82,12 @@ private enum OpenAIAPIKey {
         UserDefaults.standard.set(textModel,forKey:"s1-ai-text-model")
     }
     func disconnect(){OpenAIAPIKey.remove();key=nil;configured=false;message="API access removed from this device"}
-    func generate(_ prompt:String,kind:StickerAIKind)async throws->StickerAIResult {
+    func generate(_ prompt:String,kind:StickerAIKind,vretti:Bool=false)async throws->StickerAIResult {
         guard let key else{throw ChatGPTError.message("Set up API access first.")}
         let prompt=prompt.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !prompt.isEmpty,prompt.count<=4000 else{throw ChatGPTError.message("Describe the sticker in 1–4,000 characters.")}
         guard !busy else{throw ChatGPTError.message("A request is already in progress.")}
-        let printerInstructions=try PrintFormat.instructions()
+        let printerInstructions=vretti ? "Design for a 4 by 6 inch, 203 dpi direct thermal label (812 by 1218 dots). Use an opaque white background with black lines, readable text, simple shapes, and high contrast. The printer renders grayscale with dithering. Keep artwork within the page and do not crop content. Avoid tiny text and large solid dark areas." : try PrintFormat.instructions()
         busy=true;defer{busy=false}
         if kind == .artwork {
             message="Drawing your sticker…"
@@ -104,7 +104,7 @@ private enum OpenAIAPIKey {
             message="Artwork ready";return .image(image)
         }
         message="Writing your sticker…"
-        let instructions=printerInstructions+"\n\nReturn only final Markdown, without a code fence or explanation. Supported formatting: # heading, ## subheading, short paragraphs, bullets, - [ ] checkboxes, and tables with 1–3 short columns. Prefer fewer than 1,200 characters. Do not generate an image; produce the requested label, note, list, or table as text."
+        let instructions=printerInstructions+(vretti ? "\n\nReturn only final Markdown, without a code fence or explanation. Use headings, short paragraphs, bullets, - [ ] checkboxes, and tables with one to three short columns. Keep the content short enough to fit a single 4×6 label." : "\n\nReturn only final Markdown, without a code fence or explanation. Supported formatting: # heading, ## subheading, short paragraphs, bullets, - [ ] checkboxes, and tables with 1–3 short columns. Prefer fewer than 1,200 characters. Do not generate an image; produce the requested label, note, list, or table as text.")
         let body:[String:Any]=["model":textModel,"instructions":instructions,"input":[["role":"user","content":prompt]],"stream":true,"store":false]
         let request=try request(path:"responses",key:key,body:body)
         let (bytes,response)=try await session.bytes(for:request)

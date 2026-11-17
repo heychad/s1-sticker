@@ -33,24 +33,28 @@ import AppKit
     @ObservedObject var document:StickerDocumentModel
     @ObservedObject var printer:MacPrinter
     @ObservedObject var ai:OpenAIStickerClient
+    @StateObject private var vretti = VrettiPrinter()
+    @State private var printerChoice = "S1"
     @State private var choosingFile=false
     @State private var printWhenReady=false
-    private var busy:Bool{printer.busy||ai.busy||printWhenReady}
+    private var busy:Bool{printer.busy||vretti.busy||ai.busy||printWhenReady}
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {
-                VStack(alignment:.leading,spacing:5){Text("Make it. Print it. Stick it.").font(.title2.bold());Text(document.error ?? printer.message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)}
+                VStack(alignment:.leading,spacing:5){Text("Make it. Print it. Stick it.").font(.title2.bold());Text(printerChoice == "Vretti" ? vretti.message : (document.error ?? printer.message)).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)}
                 Spacer()
             }
             HStack {
                 Button("Open file…"){choosingFile=true}
                 Button("Use clipboard"){do{document.setContent(try S1Files.clipboard())}catch{printer.message=error.localizedDescription}}
                 Button("Use text"){document.useText()}
-                Button("Check printer"){printer.check()}
+                Button("Check printer"){printer.check()}.disabled(printerChoice != "S1")
+                Button("Feed 10 mm"){printer.feed()}.disabled(printerChoice != "S1")
+                Picker("Printer",selection:$printerChoice){Text("S1").tag("S1");Text("Vretti 4×6").tag("Vretti")}.frame(width:160)
                 Spacer()
                 Button("Pair iPhone"){do{NSWorkspace.shared.open(try S1Files.pairingPage())}catch{printer.message=error.localizedDescription}}
             }.disabled(busy)
-            MacAIComposer(client:ai,printerBusy:printer.busy||printWhenReady){result,printNow in
+            MacAIComposer(client:ai,printerBusy:printer.busy||vretti.busy||printWhenReady,printerChoice:printerChoice){result,printNow in
                 switch result{case .image(let image):document.setImage(image);case .text(let text):document.setText(text)}
                 printWhenReady=printNow
             }
@@ -59,7 +63,8 @@ import AppKit
                 VStack(alignment:.leading,spacing:8) {
                     HStack{Text("Print preview").font(.headline);Spacer();if document.rendering{ProgressView().controlSize(.small)}}
                     ScrollView([.vertical,.horizontal]) {
-                        if let output=document.output{Image(nsImage:output.image).resizable().interpolation(.none).frame(width:384,height:CGFloat(output.height)).background(.white).padding(12)}
+                        if printerChoice == "Vretti", let image=vretti.preview {Image(nsImage:image).resizable().interpolation(.none).aspectRatio(contentMode:.fit).frame(width:384).background(.white).padding(12)}
+                        else if printerChoice == "S1", let output=document.output{Image(nsImage:output.image).resizable().interpolation(.none).frame(width:384,height:CGFloat(output.height)).background(.white).padding(12)}
                     }.background(Color(nsColor:.underPageBackgroundColor)).frame(minWidth:320)
                 }
             }.frame(minHeight:250)
@@ -67,22 +72,33 @@ import AppKit
                 Picker("Print style",selection:$document.dither){Text("Sharp text").tag(false);Text("Dither grayscale").tag(true)}.pickerStyle(.segmented).frame(width:260)
                 Toggle("Auto rotate",isOn:$document.autoRotate).disabled(document.image==nil)
                 Button("Rotate 90°"){document.rotate()}.disabled(document.image==nil)
+                Toggle("Allow wide",isOn:$document.allowWide).disabled(printerChoice != "S1" || document.image == nil)
                 Spacer()
-                if let output=document.output{Text("48 × \(Int(round(Double(output.height)/8))) mm").foregroundStyle(.secondary)}
-                Button("Print sticker"){printCurrent()}.buttonStyle(.borderedProminent).keyboardShortcut("p").disabled(busy||document.rendering||document.output==nil)
+                if printerChoice == "Vretti" {Text("4 × 6 in").foregroundStyle(.secondary)}
+                else if let output=document.output{Text("48 × \(Int(round(Double(output.height)/8))) mm").foregroundStyle(.secondary)}
+                Button("Print sticker"){printCurrent()}.buttonStyle(.borderedProminent).keyboardShortcut("p").disabled(busy||document.rendering||(printerChoice == "Vretti" ? (vretti.rendering || vretti.preview == nil) : document.output == nil))
             }
         }.padding(22).frame(minWidth:850,minHeight:680).disableWritingOverlays()
             .fileImporter(isPresented:$choosingFile,allowedContentTypes:[.image,.pdf,.plainText,.json]){result in do{try document.load(result.get())}catch{printer.message=error.localizedDescription}}
             .onOpenURL{url in do{try document.load(url)}catch{printer.message=error.localizedDescription}}
             .dropDestination(for:URL.self){urls,_ in guard let url=urls.first else{return false};do{try document.load(url);return true}catch{printer.message=error.localizedDescription;return false}}
-            .onReceive(document.$rendering){rendering in guard !rendering,printWhenReady else{return};printWhenReady=false;if document.error==nil{printCurrent()}}
+            .onChange(of:printerChoice){choice in if choice == "Vretti" && !document.rendering {vretti.update(document)}}
+            .onReceive(document.$rendering){rendering in
+                guard !rendering else{return}
+                if printerChoice == "Vretti" {vretti.update(document)}
+                else if printWhenReady {printWhenReady=false;if document.error==nil{printCurrent()}}
+            }
+            .onReceive(vretti.$rendering){rendering in
+                if !rendering && printWhenReady && printerChoice == "Vretti" {printWhenReady=false;if vretti.preview != nil {vretti.printPreview()}}
+            }
     }
-    private func printCurrent(){guard !document.rendering,let output=document.output else{return};printer.printOutput(output)}
+    private func printCurrent(){if printerChoice == "Vretti" {vretti.printPreview();return};guard !document.rendering,let output=document.output else{return};printer.printOutput(output)}
 }
 
 @MainActor private struct MacAIComposer:View {
     @ObservedObject var client:OpenAIStickerClient
     let printerBusy:Bool
+    let printerChoice:String
     let onResult:(StickerAIResult,Bool)->Void
     @AppStorage("s1-ai-prompt") private var prompt=""
     @AppStorage("s1-ai-kind") private var kindRaw=0
@@ -91,7 +107,7 @@ import AppKit
     @State private var preview:StickerAIResult?
     @State private var previewID=""
     @State private var error:String?
-    private var inputID:String{"\(kindRaw)\n"+prompt.trimmingCharacters(in:.whitespacesAndNewlines)}
+    private var inputID:String{"\(printerChoice)\n\(kindRaw)\n"+prompt.trimmingCharacters(in:.whitespacesAndNewlines)}
     private var current:Bool{preview != nil&&previewID==inputID}
     var body:some View {
         GroupBox {
@@ -116,7 +132,7 @@ import AppKit
         if printNow,current,let preview{onResult(preview,true);return}
         let id=inputID
         task=Task {
-            do{let result=try await client.generate(prompt,kind:kindRaw==0 ? .artwork:.text);try Task.checkCancellation();preview=result;previewID=id;onResult(result,printNow)}
+            do{let result=try await client.generate(prompt,kind:kindRaw==0 ? .artwork:.text,vretti:printerChoice == "Vretti");try Task.checkCancellation();preview=result;previewID=id;onResult(result,printNow)}
             catch is CancellationError{error="Generation cancelled."}
             catch{self.error=error.localizedDescription}
             task=nil

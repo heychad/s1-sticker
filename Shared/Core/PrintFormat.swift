@@ -5,6 +5,8 @@ public enum PrintFormat {
     public static let maximumRows=2400
     public static let feedRows=80
     public static let leadingBlankRows=0
+    // Leave room within the 125 mm ISO B6 page for binding and margins.
+    public static let notebookSidewaysMaxRows=914 // 4.5 inches including finishing feed
     public static func quarterTurns(width:Double,height:Double,automatic:Bool,manual:Int)->Int {
         if automatic{return width>height ? 1:0}
         return (manual%4+4)%4

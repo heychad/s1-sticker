@@ -1,6 +1,6 @@
 # S1 Sticker
 
-Turn a prompt, photo, checklist, or table into a sticker on the iDPRT S1. S1 Sticker is a pair of native Swift apps for macOS and iPhone, built around a shared rendering and printer protocol core.
+Turn a prompt, photo, checklist, or table into a sticker. S1 Sticker supports the iDPRT S1 and Vretti D463B, with native Swift apps for macOS and iPhone.
 
 ![Example black-and-white sticker with a small table](examples/sticker-lab.png)
 
@@ -10,7 +10,7 @@ Turn a prompt, photo, checklist, or table into a sticker on the iDPRT S1. S1 Sti
 - Print from Raycast on the Mac or the iPhone share sheet.
 - Use the optional Wi-Fi bridge to send a job from a phone through the Mac.
 
-The printer has a 384-dot, 48 mm printhead. The renderer trims blank leading rows and feeds 10 mm after the image for cutting. Tested with an iDPRT S1; other models are not supported or tested. This is an independent project and is not affiliated with iDPRT.
+The S1 has a 384-dot, 48 mm printhead. Its renderer trims blank leading rows and feeds 10 mm after the image for cutting. The Vretti uses 4×6-inch labels at 203 dpi. Both printers use separate Bluetooth transports and preview formats. This independent project is not affiliated with either manufacturer.
 
 ## Build the Mac app
 
@@ -41,6 +41,22 @@ AI generation is optional and uses the OpenAI API, which is billed separately fr
 ```
 
 `--render` saves a preview without printing. JSON layout blocks are illustrated in `examples/sticker-lab.json`. Image rotation is available with `--rotate auto`, `0`, `90`, `180`, or `270`. A partially transmitted job is not automatically retried. If a print times out or returns no readable result, its transmission is unknown; check the physical printer before retrying.
+
+Sideways S1 images default to at most 4.5 inches of paper, including the 10 mm feed, so they fit across a B6 notebook page. Use `--allow-wide` on both preview and print, or enable **Allow wide** in the app, to override this. Upright stickers retain their existing length limit. If a finished S1 sticker needs more paper for cutting, `./bin/s1 --feed` advances about 10 mm without another image.
+
+For a Vretti 4×6 label, build the command with `zsh vretti/build-print.sh --install` and configure the connection helper with the printer's local Bluetooth identifier. Then use:
+
+```sh
+./bin/vretti --render /absolute/path/label.md --output /tmp/vretti-preview.png
+./bin/vretti --print /absolute/path/label.md
+./bin/vretti --print /absolute/path/photo.png --dither
+```
+
+Vretti text supports headings, checklists, and tables with up to three columns. Images and PDFs fit within the label without cropping; PDFs use the first page. Bluetooth acknowledgement does not confirm the physical label. Never automatically retry a partial or uncertain transfer. `vretti/README.md` explains the connection helper.
+
+The Vretti print job reads its paired CoreBluetooth identifier from the locally installed Vretti Keep Ready login agent. Vretti is not yet supported by `--raw` or S1 JSON layouts. The iPhone app supports direct Vretti Bluetooth, and the phone web bridge can send to either printer while the Mac is awake. Direct iPhone printing may require releasing the Mac connection; the Vretti helper checks briefly and releases between checks, but cross-device reliability is still being tested.
+
+An iPhone image test failed with the printer showing a red light; a small text test succeeded with the Mac helper stopped. The cause is not yet established. Check the physical label before retrying a failed job.
 
 Add the scripts in `raycast/` to Raycast's Script Commands directory to print text, clipboard contents, or an AI prompt. AI commands use the Mac app's saved API key.
 

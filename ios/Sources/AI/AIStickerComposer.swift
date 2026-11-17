@@ -19,12 +19,13 @@ struct AIStickerComposer: View {
     @State private var previewInput = ""
     @FocusState private var promptFocused: Bool
     let printerBusy: Bool
+    let printerChoice: String
     let onBusyChange: (Bool) -> Void
     let onPrint: () -> Void
     let onResult: (StickerAIResult, Bool) -> Void
 
     private var mode: StickerInputMode { StickerInputMode(rawValue: modeRaw) ?? .artwork }
-    private var inputID: String { modeRaw + "\n" + prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var inputID: String { printerChoice + "\n" + modeRaw + "\n" + prompt.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var hasCurrentPreview: Bool { preview != nil && previewInput == inputID }
     private var canPrepare: Bool {
         (mode == .text || client.configured) && !client.busy && !printerBusy && task == nil &&
@@ -157,7 +158,7 @@ struct AIStickerComposer: View {
         let requestKind: StickerAIKind = mode == .artwork ? .artwork : .text
         task = Task {
             do {
-                let result = try await client.generate(requestPrompt, kind: requestKind)
+                let result = try await client.generate(requestPrompt, kind: requestKind, vretti: printerChoice == "Vretti")
                 try Task.checkCancellation()
                 preview = result
                 previewInput = requestInput

@@ -48,12 +48,13 @@ public enum StickerRenderer {
         try render(StickerContent(text:text,image:image),dither:dither,autoRotate:autoRotate,turns:turns)
     }
 
-    public static func render(_ content:StickerContent,dither:Bool,autoRotate:Bool=true,turns:Int=0)throws->StickerOutput {
+    public static func render(_ content:StickerContent,dither:Bool,autoRotate:Bool=true,turns:Int=0,allowWide:Bool=false)throws->StickerOutput {
         if let image=content.image {
             guard image.size.width>0,image.size.height>0 else{throw issue("The image has no printable size.")}
             let rotation=PrintFormat.quarterTurns(width:image.size.width,height:image.size.height,automatic:autoRotate,manual:turns)
             let oriented=try StickerImage.oriented(image,automatic:autoRotate,turns:turns)
-            var output=try renderBlocks([["type":"image","image":oriented]],dither:dither)
+            let maxHeight = rotation % 2 == 1 && !allowWide ? PrintFormat.notebookSidewaysMaxRows-PrintFormat.feedRows : nil
+            var output=try renderBlocks([["type":"image","image":oriented]],dither:dither,maxImageRows:maxHeight)
             output.sourceSize=image.size;output.quarterTurns=rotation;return output
         }
         if let blocks=content.blocks{return try renderBlocks(blocks,dither:dither)}
@@ -101,7 +102,7 @@ public enum StickerRenderer {
     private static func textHeight(_ text:String,attrs:[NSAttributedString.Key:Any],width:CGFloat)->CGFloat {
         ceil((text as NSString).boundingRect(with:CGSize(width:width,height:10000),options:[.usesLineFragmentOrigin,.usesFontLeading],attributes:attrs,context:nil).height)+3
     }
-    private static func renderBlocks(_ blocks:[[String:Any]],dither:Bool)throws->StickerOutput {
+    private static func renderBlocks(_ blocks:[[String:Any]],dither:Bool,maxImageRows:Int?=nil)throws->StickerOutput {
         var draws:[Draw]=[];var y:CGFloat=12
         for block in blocks {
             let type=block["type"] as? String ?? "text"
@@ -110,8 +111,10 @@ public enum StickerRenderer {
             case "image":
                 let image=(block["image"] as? StickerPlatformImage) ?? (block["path"] as? String).flatMap{StickerImage.decode(URL(fileURLWithPath:$0))}
                 guard let image,image.size.width>0,image.size.height>0 else{throw issue("A sticker image could not be read.")}
-                let h=ceil(384*image.size.height/image.size.width)
-                draws.append(.image(image,CGRect(x:0,y:y,width:384,height:h)));y+=h+10
+                let ratio=image.size.height/image.size.width
+                let width=maxImageRows.map { min(CGFloat(384),CGFloat(max(1,$0-34))/ratio) } ?? 384
+                let h=ceil(width*ratio)
+                draws.append(.image(image,CGRect(x:(384-width)/2,y:y,width:width,height:h)));y+=h+10
             case "table":
                 guard let rawHeaders=block["headers"] as? [Any],(1...4).contains(rawHeaders.count),let rawRows=block["rows"] as? [[Any]] else{throw issue("Use one to four short table columns.")}
                 let headers=rawHeaders.map{String(describing:$0)},rows=rawRows.map{$0.map{String(describing:$0)}}

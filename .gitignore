@@ -9,6 +9,9 @@ S1Sticker.xcodeproj/
 __pycache__/
 *.pyc
 ios/build/
+ios/.development-team
+ios/.device-udid
+ios/.device-id
 *.log
 .env
 .env.*

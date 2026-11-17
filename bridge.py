@@ -16,6 +16,7 @@ import urllib.parse
 ROOT=Path(__file__).resolve().parent
 STATE=Path.home()/"Library/Application Support/S1Sticker"
 BINARY=Path.home()/"Applications/S1 Sticker.app/Contents/MacOS/S1Sticker"
+VRETTI=Path.home()/"Applications/Vretti Print.app/Contents/MacOS/VrettiPrint"
 STATE.mkdir(parents=True,exist_ok=True)
 CONFIG=STATE/"bridge.json"
 if CONFIG.exists():
@@ -90,7 +91,10 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(30)
         body=self.rfile.read(length)
         if len(body)!=length:return self.send(400,{"ok":False,"message":"Upload was incomplete. Nothing printed."})
-        digest=hashlib.sha256(route.path.encode()+body).hexdigest()
+        params=urllib.parse.parse_qs(route.query)
+        printer=params.get("printer",["s1"])[0]
+        if printer not in ["s1","vretti"]:return self.send(400,{"ok":False,"sent":False,"message":"Choose S1 or Vretti."})
+        digest=hashlib.sha256(route.path.encode()+b'\0'+route.query.encode()+b'\0'+body).hexdigest()
         if not JOB_LOCK.acquire(blocking=False): return self.send(409,{"ok":False,"message":"Printer is busy. Wait for the current sticker."})
         try:
             if job in jobs:
@@ -104,21 +108,26 @@ class Handler(BaseHTTPRequestHandler):
                     content=json.loads(body)
                     text=content.get("text")
                     if not isinstance(text,str) or not 0<len(text)<=20000: raise ValueError("Use 1–20,000 characters.")
-                    args=["--text",text]
+                    if printer == "vretti":
+                        path=Path(tmp)/"sticker.txt";path.write_text(text,encoding="utf-8");args=["--print",str(path)]
+                    else: args=["--text",text]
                 else:
-                    params=urllib.parse.parse_qs(route.query)
                     suffix=Path(params.get("name",[""])[0]).suffix.lower()
                     if suffix not in [".png",".jpg",".jpeg",".heic",".webp",".tiff",".gif",".bmp",".pdf",".txt",".md",".json"]: raise ValueError("Use an image, PDF, text, Markdown, or sticker JSON file.")
+                    if printer == "vretti" and suffix == ".json": raise ValueError("Vretti supports image, PDF, or text files, not JSON layouts.")
                     path=Path(tmp)/("sticker"+suffix);path.write_bytes(body)
                     args=["--print",str(path)]
                     if params.get("dither",["0"])[0]=="1":args.append("--dither")
-                p=subprocess.run([str(BINARY)]+args,capture_output=True,text=True,timeout=80)
-                result=json.loads(p.stdout)
+                p=subprocess.run([str(VRETTI if printer == "vretti" else BINARY)]+args,capture_output=True,text=True,timeout=200 if printer == "vretti" else 80)
+                try: result=json.loads(p.stdout)
+                except (ValueError, TypeError): result={"ok":False,"sent":None,"message":"Print result unavailable. Check the printer before sending again."}
             jobs[job]["result"]=result;save_jobs();self.send(200,result)
         except (ValueError,KeyError) as e:
             result={"ok":False,"message":str(e) or "Invalid print data."};jobs[job]["result"]=result;save_jobs();self.send(400,result)
         except subprocess.TimeoutExpired:
-            result={"ok":False,"message":"Print timed out. Check the printer before sending again."};jobs[job]["result"]=result;save_jobs();self.send(504,result)
+            result={"ok":False,"sent":None,"message":"Print timed out. Check the printer before sending again."};jobs[job]["result"]=result;save_jobs();self.send(504,result)
+        except OSError:
+            result={"ok":False,"sent":False,"message":"Could not start the printer command."};jobs[job]["result"]=result;save_jobs();self.send(503,result)
         finally: JOB_LOCK.release()
 
 if __name__=="__main__":

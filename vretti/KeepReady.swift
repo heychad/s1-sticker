@@ -13,6 +13,7 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var readPending = false
     private var scanning = false
     private var timer: DispatchSourceTimer?
+    private var nextAttempt = Date.distantPast
     private let targetID: UUID
     private let deadline: Date
 
@@ -22,7 +23,7 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         super.init()
         central = CBCentralManager(delegate: self, queue: .main)
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 10, repeating: 10)
+        timer.schedule(deadline: .now() + 5, repeating: 5)
         timer.setEventHandler { [weak self] in self?.tick() }
         timer.resume()
         self.timer = timer
@@ -34,7 +35,7 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func scan() {
-        guard central.state == .poweredOn, target == nil, !scanning else { return }
+        guard central.state == .poweredOn, target == nil, !scanning, Date() >= nextAttempt else { return }
         if let cached = central.retrievePeripherals(withIdentifiers: [targetID]).first {
             target = cached; cached.delegate = self; attemptStarted = Date()
             log("Reconnecting to known Vretti")
@@ -96,12 +97,12 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         log("Connection failed: \(error?.localizedDescription ?? "unknown")")
-        target = nil; model = nil; readPending = false; attemptStarted = nil; readStarted = nil; lastRead = nil
+        target = nil; model = nil; readPending = false; attemptStarted = nil; readStarted = nil; lastRead = nil; nextAttempt = Date().addingTimeInterval(55)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         log("Disconnected: \(error?.localizedDescription ?? "no error reported")")
-        target = nil; model = nil; readPending = false; attemptStarted = nil; readStarted = nil; lastRead = nil
+        target = nil; model = nil; readPending = false; attemptStarted = nil; readStarted = nil; lastRead = nil; nextAttempt = Date().addingTimeInterval(55)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
@@ -125,7 +126,10 @@ final class VrettiKeepReady: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard characteristic.uuid == CBUUID(string: "2A24") else { return }
         readPending = false; readStarted = nil
         if let error { log("Read failed: \(error.localizedDescription)"); central.cancelPeripheralConnection(peripheral) }
-        else { lastRead = Date(); log("Connected; model read succeeded") }
+        else {
+            lastRead = Date(); log("Model read succeeded; releasing connection for other devices")
+            central.cancelPeripheralConnection(peripheral)
+        }
     }
 }
 

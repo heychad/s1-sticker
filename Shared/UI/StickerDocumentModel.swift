@@ -7,10 +7,12 @@ import Combine
     @Published var dither=false {didSet{scheduleRender()}}
     @Published var autoRotate=true {didSet{scheduleRender()}}
     @Published var turns=0 {didSet{scheduleRender()}}
+    @Published var allowWide=false {didSet{scheduleRender()}}
     @Published private(set) var output:StickerOutput?
     @Published private(set) var rendering=false
     @Published private(set) var error:String?
     private var blocks:[[String:Any]]?
+    var hasStructuredBlocks:Bool { blocks != nil }
     private var generation=UUID()
     private var debounce:Task<Void,Never>?
     private let renderer=DispatchQueue(label:"local.chad.s1.render",qos:.userInitiated)
@@ -31,9 +33,9 @@ import Combine
             try? await Task.sleep(nanoseconds:90_000_000)
             guard !Task.isCancelled,let self else{return}
             let content=StickerContent(text:self.text,image:self.image,blocks:self.blocks)
-            let dither=self.dither,autoRotate=self.autoRotate,turns=self.turns
+            let dither=self.dither,autoRotate=self.autoRotate,turns=self.turns,allowWide=self.allowWide
             self.renderer.async {[weak self] in
-                let result=Result{try StickerRenderer.render(content,dither:dither,autoRotate:autoRotate,turns:turns)}
+                let result=Result{try StickerRenderer.render(content,dither:dither,autoRotate:autoRotate,turns:turns,allowWide:allowWide)}
                 DispatchQueue.main.async{[weak self] in
                     guard let self,self.generation==token else{return}
                     switch result{case .success(let output):self.output=output;self.error=nil;case .failure(let failure):self.output=nil;self.error=failure.localizedDescription}

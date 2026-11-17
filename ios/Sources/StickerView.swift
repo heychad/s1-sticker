@@ -4,7 +4,12 @@ import UniformTypeIdentifiers
 
 @MainActor struct StickerView: View {
     @StateObject private var printer = S1Bluetooth()
+    @StateObject private var vretti = VrettiBluetooth()
     @StateObject private var document: StickerDocumentModel
+    @State private var printerChoice = "S1"
+    @State private var vrettiOutput: VrettiOutput?
+    @State private var vrettiRendering = false
+    @State private var vrettiGeneration = UUID()
     @State private var selected: PhotosPickerItem?
     @State private var chooseFile = false
     @State private var error: String?
@@ -13,7 +18,7 @@ import UniformTypeIdentifiers
     @State private var hasContent: Bool
     @State private var editingText = false
     @FocusState private var textFocused: Bool
-    private var busy: Bool { printer.busy || generating || printWhenReady }
+    private var busy: Bool { printer.busy || vretti.busy || generating || printWhenReady }
 
     init(text: String? = nil, image: UIImage? = nil) {
         _document = StateObject(wrappedValue: StickerDocumentModel(text: text ?? "", image: image))
@@ -24,9 +29,11 @@ import UniformTypeIdentifiers
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
+                    Picker("Printer", selection: $printerChoice) { Text("S1").tag("S1"); Text("Vretti 4×6").tag("Vretti") }.pickerStyle(.segmented).disabled(busy)
                     #if !SHARE_EXTENSION
                     AIStickerComposer(
-                        printerBusy: printer.busy || printWhenReady || (hasContent && document.rendering),
+                        printerBusy: printer.busy || vretti.busy || printWhenReady || (hasContent && document.rendering),
+                        printerChoice: printerChoice,
                         onBusyChange: { generating = $0 },
                         onPrint: printCurrent
                     ) { result, printNow in
@@ -39,7 +46,7 @@ import UniformTypeIdentifiers
                         printWhenReady = printNow
                     }
                     #endif
-                    if let message = error ?? (hasContent ? document.error : nil) {
+                    if let message = error ?? (hasContent && printerChoice == "S1" ? document.error : nil) {
                         Label(message, systemImage: "exclamationmark.circle")
                             .font(.subheadline).foregroundStyle(.red)
                     }
@@ -75,10 +82,14 @@ import UniformTypeIdentifiers
                 if hasContent { printBar }
             }
             .onReceive(document.$rendering) { rendering in
-                guard !rendering, printWhenReady else { return }
-                printWhenReady = false
-                if document.error == nil { printCurrent() }
+                guard !rendering else { return }
+                if printerChoice == "Vretti" { updateVrettiPreview() }
+                else if printWhenReady { printWhenReady = false; if document.error == nil { printCurrent() } }
             }
+            .onChange(of: vrettiRendering) { _, rendering in
+                if !rendering && printWhenReady && printerChoice == "Vretti" { printWhenReady = false; if vrettiOutput != nil { printCurrent() } }
+            }
+            .onChange(of: printerChoice) { _, choice in if choice == "Vretti" { updateVrettiPreview() } }
             .onChange(of: selected) { _, item in
                 Task {
                     if let data = try? await item?.loadTransferable(type: Data.self),
@@ -109,10 +120,10 @@ import UniformTypeIdentifiers
             HStack {
                 Text("Preview").font(.headline)
                 Spacer()
-                if document.rendering { ProgressView().controlSize(.small) }
+                if document.rendering || (printerChoice == "Vretti" && vrettiRendering) { ProgressView().controlSize(.small) }
             }
-            if let output = document.output {
-                Image(uiImage: output.image)
+            if let image = printerChoice == "Vretti" ? vrettiOutput?.image : document.output?.image {
+                Image(uiImage: image)
                     .resizable().interpolation(.none).scaledToFit()
                     .frame(maxWidth: 384)
                     .background(.white)
@@ -136,8 +147,10 @@ import UniformTypeIdentifiers
                         Toggle("Auto rotate", isOn: $document.autoRotate)
                         Button("Rotate 90°", systemImage: "rotate.right") { document.rotate() }
                             .stickerButtonStyle()
+                        if printerChoice == "S1" { Toggle("Allow wide sticker", isOn: $document.allowWide) }
                     }
-                    Text("Direct Bluetooth · 48 mm wide · 10 mm finishing feed")
+                    if printerChoice == "S1" { Button("Feed 10 mm", systemImage: "arrow.down") { printer.printRaster(Data(repeating: 0, count: 48)) }.stickerButtonStyle() }
+                    Text(printerChoice == "Vretti" ? "Direct Bluetooth · 4 × 6 in" : "Direct Bluetooth · 48 mm wide · 10 mm finishing feed")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(.top, 12)
@@ -148,26 +161,32 @@ import UniformTypeIdentifiers
 
     private var printBar: some View {
         VStack(spacing: 8) {
-            Text(printer.message).font(.caption).foregroundStyle(.secondary)
+            Text(printerChoice == "Vretti" ? vretti.message : printer.message).font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 18) {
-                if let output = document.output {
+                if printerChoice == "Vretti" { Text("4 × 6 in").font(.subheadline).foregroundStyle(.secondary) }
+                else if let output = document.output {
                     Text("48 × \(Int(round(Double(output.height) / 8))) mm")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Button(action: printCurrent) {
                     HStack {
-                        if printer.busy { ProgressView() }
+                        if printer.busy || vretti.busy { ProgressView() }
                         else { Image(systemName: "printer") }
-                        Text(printer.busy ? "Printing…" : "Print sticker")
+                        Text(printer.busy || vretti.busy ? "Printing…" : "Print sticker")
                     }
                     .frame(maxWidth: .infinity, minHeight: 38)
                 }
                 .stickerButtonStyle(prominent: true)
-                .disabled(busy || document.rendering || document.output == nil)
+                .disabled(busy || document.rendering || (printerChoice == "Vretti" ? (vrettiRendering || vrettiOutput == nil) : document.output == nil))
             }
             if printer.busy {
                 Button("Cancel print", role: .destructive) { printer.cancel() }
             }
+            if vretti.busy, let progress = vretti.progress {
+                ProgressView(value: progress).accessibilityLabel("Sending to Vretti")
+                Text("\(Int(progress * 100))% sent").font(.caption).foregroundStyle(.secondary)
+            }
+            if vretti.busy { Button("Cancel print", role: .destructive) { vretti.cancel() } }
         }
         .padding(.horizontal, 24).padding(.vertical, 12)
         .background(.bar)
@@ -181,9 +200,24 @@ import UniformTypeIdentifiers
     }
 
     private func printCurrent() {
-        guard !busy, !document.rendering, let output = document.output else { return }
+        guard !busy, !document.rendering, !(printerChoice == "Vretti" && vrettiRendering) else { return }
         textFocused = false
         error = nil
-        printer.printRaster(output.raster)
+        if printerChoice == "Vretti" { if let output = vrettiOutput { vretti.print(output.packet) }; return }
+        if let output = document.output { printer.printRaster(output.raster) }
+    }
+
+    private func updateVrettiPreview() {
+        guard hasContent else { vrettiOutput = nil; return }
+        let token=UUID();vrettiGeneration=token;vrettiRendering=true;vrettiOutput=nil
+        let input=VrettiInput(text:document.text,image:document.image,dither:document.dither,autoRotate:document.autoRotate,turns:document.turns,hasBlocks:document.hasStructuredBlocks)
+        DispatchQueue.global(qos:.userInitiated).async {
+            let result=Result {try VrettiPage.render(input)}
+            DispatchQueue.main.async {
+                guard vrettiGeneration == token else{return}
+                switch result {case .success(let output):vrettiOutput=output;error=nil;case .failure(let failure):vrettiOutput=nil;error=failure.localizedDescription}
+                vrettiRendering=false
+            }
+        }
     }
 }

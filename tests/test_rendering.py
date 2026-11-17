@@ -46,5 +46,16 @@ class RenderingTests(unittest.TestCase):
             self.assertEqual(set(pixels), {0, 255})
             self.assertEqual(set(sharp.crop((10, 10, 374, 190)).tobytes()), {0})
 
+    def test_sideways_images_fit_b6_unless_explicitly_overridden(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=root/'wide.png';default=root/'fit.png';wide=root/'wide-preview.png'
+            Image.new('RGB',(700,200),'black').save(source)
+            fit=subprocess.run([str(BINARY),'--render',str(source),'--output',str(default),'--rotate','90'],capture_output=True,text=True,check=True)
+            override=subprocess.run([str(BINARY),'--render',str(source),'--output',str(wide),'--rotate','90','--allow-wide'],capture_output=True,text=True,check=True)
+            fitted=json.loads(fit.stdout);unrestricted=json.loads(override.stdout)
+            self.assertLessEqual(fitted['height']+80,914)
+            self.assertGreater(unrestricted['height']+80,914)
+            self.assertEqual(fitted['rotation'],90)
+
 if __name__ == "__main__":
     unittest.main()
